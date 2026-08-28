@@ -1,0 +1,576 @@
+import { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import QRCode from 'qrcode'
+import { ALL_EMPLOYEES, createQRSession } from '../services/qrSessionService'
+import { sendQRGeneratedEmail, isEmailConfigured, getEmailConfig } from '../services/emailService'
+
+const DEPARTMENTS = ['Todos', 'Producción', 'Mantenimiento', 'Seguridad', 'Calidad', 'Supervisión']
+
+/** Calcula la diferencia entre dos strings HH:MM. Devuelve texto legible. */
+function calcDuration(start, end) {
+  if (!start || !end) return null
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  let mins = (eh * 60 + em) - (sh * 60 + sm)
+  if (mins <= 0) mins += 24 * 60   // cruza medianoche
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (m === 0) return `${h} h`
+  return `${h} h ${m} min`
+}
+
+export default function QRGenerate() {
+  const navigate = useNavigate()
+
+  // ── Estado de configuración ──────────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState([])
+  const [startTime,   setStartTime]   = useState('07:00')
+  const [endTime,     setEndTime]     = useState('15:00')
+  const [date,        setDate]        = useState(() => new Date().toISOString().slice(0, 10))
+  const [search,      setSearch]      = useState('')
+  const [deptFilter,  setDeptFilter]  = useState('Todos')
+
+  // ── Estado del QR generado ───────────────────────────────────────────────
+  const [session,    setSession]   = useState(null)   // sesión creada
+  const [qrDataUrl,  setQrDataUrl] = useState('')     // img base64
+  const [generating, setGenerating]= useState(false)
+  const [copied,     setCopied]    = useState(false)
+
+  // ── Estado del envío de correo ───────────────────────────────────────────
+  const [emailStatus, setEmailStatus] = useState('')  // '' | 'sending' | 'sent' | 'error' | 'skip'
+  const [emailError,  setEmailError]  = useState('')
+
+  const qrImgRef = useRef(null)
+
+  // ── Filtrado de empleados ────────────────────────────────────────────────
+  const filtered = ALL_EMPLOYEES.filter(e => {
+    const matchDept   = deptFilter === 'Todos' || e.department === deptFilter
+    const matchSearch = !search ||
+      e.name.toLowerCase().includes(search.toLowerCase()) ||
+      e.id.toLowerCase().includes(search.toLowerCase())   ||
+      e.role.toLowerCase().includes(search.toLowerCase())
+    return matchDept && matchSearch
+  })
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(e => selectedIds.includes(e.id))
+
+  function toggleEmployee(id) {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
+  }
+
+  function toggleAll() {
+    if (allFilteredSelected) {
+      setSelectedIds(prev => prev.filter(id => !filtered.map(e => e.id).includes(id)))
+    } else {
+      const ids = filtered.map(e => e.id)
+      setSelectedIds(prev => [...new Set([...prev, ...ids])])
+    }
+  }
+
+  // ── Generar QR ───────────────────────────────────────────────────────────
+  async function handleGenerate() {
+    if (selectedIds.length === 0 || !startTime || !endTime) return
+    setGenerating(true)
+
+    const newSession = createQRSession({
+      employeeIds: selectedIds,
+      date,
+      shift: `${startTime} – ${endTime}`,
+    })
+
+    const checkInUrl = `${window.location.origin}/checkin?session=${newSession.token}`
+
+    try {
+      const dataUrl = await QRCode.toDataURL(checkInUrl, {
+        width:           340,
+        margin:          2,
+        color: { dark: '#041632', light: '#ffffff' },
+        errorCorrectionLevel: 'M',
+      })
+      const fullSession = { ...newSession, url: checkInUrl }
+      setQrDataUrl(dataUrl)
+      setSession(fullSession)
+
+      // ── Enviar correo automáticamente ──────────────────────────────────
+      const emailCfg = getEmailConfig()
+      if (emailCfg.notifications?.onQRGenerated === false) {
+        setEmailStatus('skip')
+      } else if (!isEmailConfigured()) {
+        setEmailStatus('skip')
+      } else {
+        setEmailStatus('sending')
+        const employees = ALL_EMPLOYEES.filter(e => selectedIds.includes(e.id))
+        sendQRGeneratedEmail({ session: fullSession, employees, qrDataUrl: dataUrl })
+          .then(() => { setEmailStatus('sent'); setTimeout(() => setEmailStatus(''), 6000) })
+          .catch(err => {
+            setEmailStatus('error')
+            setEmailError(err?.text ?? err?.message ?? 'Error al enviar')
+            setTimeout(() => setEmailStatus(''), 8000)
+          })
+      }
+    } catch (err) {
+      console.error('[QRGenerate] Error generando QR:', err)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  function handleDownload() {
+    if (!qrDataUrl) return
+    const a   = document.createElement('a')
+    a.href    = qrDataUrl
+    a.download = `QR_${session?.shift?.replace(/\s/g,'_')}_${session?.date}.png`
+    a.click()
+  }
+
+  function handleCopyUrl() {
+    if (!session?.url) return
+    navigator.clipboard.writeText(session.url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  function handleNewQR() {
+    setSession(null)
+    setQrDataUrl('')
+    setSelectedIds([])
+  }
+
+  const duration = calcDuration(startTime, endTime)
+
+  // ────────────────────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-[#f7f9fb] flex flex-col">
+
+      {/* ── Header ── */}
+      <header className="bg-white border-b border-[#e0e3e5] px-6 h-14 flex items-center justify-between shrink-0 shadow-sm">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="flex items-center gap-1.5 text-[#041632] text-[13px] font-semibold hover:text-[#964900] transition-colors cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+            Dashboard
+          </button>
+          <div className="h-5 w-px bg-[#e0e3e5]" />
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[#964900] text-[20px]">qr_code_2</span>
+            <div>
+              <p className="text-[#041632] text-[13px] font-bold leading-none">Generar Pase QR</p>
+              <p className="text-[#75777e] text-[11px] mt-0.5">Plant Alpha-4 · Acceso de turno</p>
+            </div>
+          </div>
+        </div>
+
+        {session && (
+          <button
+            onClick={handleNewQR}
+            className="flex items-center gap-1.5 text-[13px] font-semibold px-4 py-1.5 border border-[#c5c6ce] rounded-lg bg-white hover:bg-[#f2f4f6] text-[#041632] transition-colors cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[16px]">add</span>
+            Nuevo QR
+          </button>
+        )}
+      </header>
+
+      {/* ── Body ── */}
+      <div className="flex-1 flex flex-col lg:flex-row gap-5 p-5 lg:p-6 max-w-[1200px] w-full mx-auto">
+
+        {/* ══════════════ PANEL IZQUIERDO — Selección de empleados ══════════════ */}
+        <div className={`flex flex-col gap-4 ${session ? 'lg:w-[480px]' : 'flex-1'}`}>
+
+          {/* Título del panel */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-[#041632] text-[17px] font-black">Empleados del turno</h2>
+              <p className="text-[#75777e] text-[12px] mt-0.5">
+                Selecciona quiénes entrarán a planta hoy
+              </p>
+            </div>
+            {selectedIds.length > 0 && (
+              <span className="flex items-center gap-1.5 bg-[#041632] text-white text-[12px] font-bold px-3 py-1 rounded-full">
+                <span className="material-symbols-outlined text-[14px]">group</span>
+                {selectedIds.length} seleccionado{selectedIds.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          {/* Filtros */}
+          <div className="flex gap-2.5">
+            {/* Búsqueda */}
+            <div className="flex-1 relative">
+              <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[#75777e] text-[17px]">
+                search
+              </span>
+              <input
+                type="text"
+                placeholder="Buscar empleado..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full h-9 bg-white border border-[#c5c6ce] rounded-lg pl-8 pr-3 text-[13px] text-[#041632] placeholder-[#adb0b7] focus:outline-none focus:border-[#041632] transition-colors"
+              />
+            </div>
+            {/* Departamento */}
+            <select
+              value={deptFilter}
+              onChange={e => setDeptFilter(e.target.value)}
+              className="h-9 bg-white border border-[#c5c6ce] rounded-lg px-3 text-[13px] text-[#041632] focus:outline-none focus:border-[#041632] cursor-pointer"
+            >
+              {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+            </select>
+          </div>
+
+          {/* Lista de empleados */}
+          <div className="bg-white border border-[#e0e3e5] rounded-2xl shadow-sm overflow-hidden flex flex-col">
+
+            {/* Header de lista con Select All */}
+            <div className="px-4 py-2.5 border-b border-[#e0e3e5] flex items-center gap-3 bg-[#f7f9fb]">
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={toggleAll}
+                className="w-4 h-4 rounded border-[#c5c6ce] accent-[#041632] cursor-pointer"
+              />
+              <span className="text-[11px] text-[#75777e] font-semibold uppercase tracking-wide flex-1">
+                {allFilteredSelected ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                {search || deptFilter !== 'Todos' ? ` (${filtered.length} filtrado${filtered.length !== 1 ? 's' : ''})` : ` (${ALL_EMPLOYEES.length})`}
+              </span>
+            </div>
+
+            {/* Filas de empleados */}
+            <div className="overflow-y-auto" style={{ maxHeight: '420px' }}>
+              {filtered.length === 0 ? (
+                <div className="py-10 text-center text-[#75777e] text-[13px]">
+                  <span className="material-symbols-outlined text-[32px] block mb-2">search_off</span>
+                  Sin resultados para "{search}"
+                </div>
+              ) : (
+                filtered.map(emp => {
+                  const selected = selectedIds.includes(emp.id)
+                  return (
+                    <label
+                      key={emp.id}
+                      className={`flex items-center gap-3 px-4 py-3 border-b border-[#f2f4f6] cursor-pointer transition-colors
+                        ${selected ? 'bg-[#041632]/[0.04]' : 'hover:bg-[#f7f9fb]'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleEmployee(emp.id)}
+                        className="w-4 h-4 rounded border-[#c5c6ce] accent-[#041632] cursor-pointer shrink-0"
+                      />
+                      {/* Avatar */}
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold
+                        ${selected ? 'bg-[#041632] text-white' : 'bg-[#e8eaed] text-[#44474d]'}`}>
+                        {emp.name.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-[13px] font-bold truncate ${selected ? 'text-[#041632]' : 'text-[#1c1f22]'}`}>
+                          {emp.name}
+                        </p>
+                        <p className="text-[11px] text-[#75777e] truncate">{emp.role} · {emp.department}</p>
+                      </div>
+                      <span className="text-[11px] font-mono text-[#adb0b7] shrink-0">{emp.id}</span>
+                    </label>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ══════════════ PANEL DERECHO — Configuración + QR ══════════════ */}
+        <div className="flex flex-col gap-4 lg:w-[380px] lg:shrink-0">
+
+          {!session ? (
+            /* ── Configuración de turno ── */
+            <>
+              <div>
+                <h2 className="text-[#041632] text-[17px] font-black">Configurar turno</h2>
+                <p className="text-[#75777e] text-[12px] mt-0.5">
+                  Define la fecha y turno del acceso
+                </p>
+              </div>
+
+              {/* Fecha */}
+              <div className="bg-white border border-[#e0e3e5] rounded-2xl shadow-sm p-5 flex flex-col gap-3">
+                <label className="flex items-center gap-2 text-[#041632] text-[13px] font-bold">
+                  <span className="material-symbols-outlined text-[18px]">calendar_today</span>
+                  Fecha de acceso
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={e => setDate(e.target.value)}
+                  className="h-10 border border-[#c5c6ce] rounded-lg px-3 text-[14px] text-[#041632] focus:outline-none focus:border-[#041632] bg-[#f7f9fb] cursor-pointer"
+                />
+              </div>
+
+              {/* Horario */}
+              <div className="bg-white border border-[#e0e3e5] rounded-2xl shadow-sm p-5 flex flex-col gap-4">
+                <p className="text-[#041632] text-[13px] font-bold flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px]">schedule</span>
+                  Horario del turno
+                </p>
+
+                {/* Inputs de hora */}
+                <div className="flex gap-3 items-end">
+                  {/* Hora de entrada */}
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    <label className="text-[11px] text-[#75777e] font-semibold uppercase tracking-wide flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px]">login</span>
+                      Entrada
+                    </label>
+                    <input
+                      type="time"
+                      value={startTime}
+                      onChange={e => setStartTime(e.target.value)}
+                      className="h-[46px] w-full border-2 border-[#c5c6ce] focus:border-[#041632] rounded-xl px-3 text-[15px] font-bold text-[#041632] bg-[#f7f9fb] focus:outline-none focus:bg-white transition-colors cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Flecha separadora */}
+                  <div className="pb-2.5 text-[#adb0b7]">
+                    <span className="material-symbols-outlined text-[22px]">arrow_forward</span>
+                  </div>
+
+                  {/* Hora de salida */}
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    <label className="text-[11px] text-[#75777e] font-semibold uppercase tracking-wide flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px]">logout</span>
+                      Salida
+                    </label>
+                    <input
+                      type="time"
+                      value={endTime}
+                      onChange={e => setEndTime(e.target.value)}
+                      className="h-[46px] w-full border-2 border-[#c5c6ce] focus:border-[#041632] rounded-xl px-3 text-[15px] font-bold text-[#041632] bg-[#f7f9fb] focus:outline-none focus:bg-white transition-colors cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* Duración calculada */}
+                {duration && (
+                  <div className="flex items-center justify-between bg-[#f7f9fb] border border-[#e0e3e5] rounded-xl px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[#964900] text-[16px]"
+                        style={{ fontVariationSettings: "'FILL' 1" }}>timer</span>
+                      <span className="text-[#75777e] text-[12px] font-semibold">Duración del turno</span>
+                    </div>
+                    <span className="text-[#041632] text-[14px] font-black">{duration}</span>
+                  </div>
+                )}
+
+                {/* Advertencia si cruza medianoche */}
+                {startTime && endTime && startTime >= endTime && (
+                  <div className="flex items-center gap-2 bg-[#fef3c7] border border-[#fde68a] rounded-lg px-3 py-2">
+                    <span className="material-symbols-outlined text-[#92400e] text-[15px]"
+                      style={{ fontVariationSettings: "'FILL' 1" }}>bedtime</span>
+                    <span className="text-[#92400e] text-[11px] font-semibold">
+                      Turno nocturno — termina el día siguiente
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Resumen */}
+              {selectedIds.length > 0 && startTime && endTime && (
+                <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-xl px-4 py-3 flex items-center gap-3">
+                  <span className="material-symbols-outlined text-[#15803d] text-[20px]"
+                    style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                  <p className="text-[#15803d] text-[13px] font-semibold">
+                    {selectedIds.length} empleado{selectedIds.length !== 1 ? 's' : ''}
+                    {' '}· {startTime} – {endTime}
+                    {duration && <span className="font-normal opacity-80"> ({duration})</span>}
+                  </p>
+                </div>
+              )}
+
+              {/* Botón generar */}
+              <button
+                onClick={handleGenerate}
+                disabled={selectedIds.length === 0 || !startTime || !endTime || generating}
+                className="w-full h-[52px] bg-[#041632] hover:bg-[#1b2b48] disabled:bg-[#c5c6ce] disabled:cursor-not-allowed text-white text-[14px] font-bold rounded-xl flex items-center justify-center gap-2.5 transition-colors cursor-pointer shadow-md"
+              >
+                {generating ? (
+                  <>
+                    <svg className="animate-spin w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                    </svg>
+                    Generando QR...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[20px]">qr_code_2</span>
+                    {selectedIds.length === 0 ? 'Selecciona empleados primero' : `Generar QR de acceso`}
+                  </>
+                )}
+              </button>
+            </>
+
+          ) : (
+            /* ── QR generado ── */
+            <>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-[#dcfce7] flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[#15803d] text-[16px]"
+                    style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
+                </div>
+                <div>
+                  <h2 className="text-[#041632] text-[17px] font-black leading-tight">QR listo</h2>
+                  <p className="text-[#75777e] text-[12px]">Muéstralo a los empleados para escanear</p>
+                </div>
+              </div>
+
+              {/* Toast de estado del correo */}
+              {emailStatus === 'sending' && (
+                <div className="flex items-center gap-2.5 bg-[#eff6ff] border border-[#bfdbfe] rounded-xl px-4 py-2.5">
+                  <svg className="animate-spin w-4 h-4 text-[#2563eb] shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  <p className="text-[#1d4ed8] text-[12px] font-semibold">Enviando notificación a RH...</p>
+                </div>
+              )}
+              {emailStatus === 'sent' && (
+                <div className="flex items-center gap-2.5 bg-[#f0fdf4] border border-[#bbf7d0] rounded-xl px-4 py-2.5">
+                  <span className="material-symbols-outlined text-[#15803d] text-[18px] shrink-0"
+                    style={{ fontVariationSettings: "'FILL' 1" }}>mark_email_read</span>
+                  <div>
+                    <p className="text-[#15803d] text-[12px] font-bold">Correo enviado a RH</p>
+                    <p className="text-[#166534] text-[11px]">
+                      {getEmailConfig().hrEmails?.join(', ')}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {emailStatus === 'error' && (
+                <div className="flex items-start gap-2.5 bg-[#fef2f2] border border-[#fecaca] rounded-xl px-4 py-2.5">
+                  <span className="material-symbols-outlined text-[#dc2626] text-[18px] shrink-0 mt-0.5"
+                    style={{ fontVariationSettings: "'FILL' 1" }}>error</span>
+                  <div>
+                    <p className="text-[#dc2626] text-[12px] font-bold">No se pudo enviar el correo</p>
+                    {emailError && <p className="text-[#b91c1c] text-[11px] mt-0.5">{emailError}</p>}
+                    <button
+                      onClick={() => navigate('/notifications')}
+                      className="text-[11px] font-semibold text-[#dc2626] underline mt-0.5 cursor-pointer"
+                    >
+                      Verificar configuración →
+                    </button>
+                  </div>
+                </div>
+              )}
+              {emailStatus === 'skip' && (
+                <div className="flex items-center gap-2.5 bg-[#f7f9fb] border border-[#e0e3e5] rounded-xl px-4 py-2.5">
+                  <span className="material-symbols-outlined text-[#75777e] text-[16px]">mail_off</span>
+                  <p className="text-[#75777e] text-[12px]">
+                    Sin notificación —{' '}
+                    <button onClick={() => navigate('/notifications')} className="font-semibold underline cursor-pointer">
+                      Configurar correo
+                    </button>
+                  </p>
+                </div>
+              )}
+
+              {/* Tarjeta del QR */}
+              <div className="bg-white border-2 border-[#041632] rounded-2xl shadow-md overflow-hidden">
+                {/* Cabecera */}
+                <div className="bg-[#041632] px-5 py-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-white text-[12px] font-bold uppercase tracking-wider">Plant Alpha-4</p>
+                    <p className="text-[#b7c8e1] text-[11px]">
+                      {session.date} · {session.shift}
+                      {duration && <span className="text-[#fc820c] font-semibold"> · {duration}</span>}
+                    </p>
+                  </div>
+                  <span className="material-symbols-outlined text-[#fc820c] text-[28px]">qr_code_2</span>
+                </div>
+
+                {/* Imagen QR */}
+                <div className="flex justify-center px-5 pt-5 pb-3">
+                  {qrDataUrl && (
+                    <img
+                      ref={qrImgRef}
+                      src={qrDataUrl}
+                      alt="Código QR de acceso"
+                      className="w-[240px] h-[240px] rounded-lg border border-[#e0e3e5]"
+                    />
+                  )}
+                </div>
+
+                {/* Info */}
+                <div className="px-5 pb-4 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 bg-[#f7f9fb] border border-[#e0e3e5] rounded-lg px-3 py-2">
+                    <span className="material-symbols-outlined text-[#75777e] text-[14px]">group</span>
+                    <span className="text-[#041632] text-[12px] font-semibold">
+                      {session.employeeIds.length} empleado{session.employeeIds.length !== 1 ? 's' : ''} autorizados
+                    </span>
+                    <span className="ml-auto text-[11px] font-mono text-[#adb0b7]">
+                      #{session.token.slice(0, 8)}
+                    </span>
+                  </div>
+
+                  {/* Instrucción */}
+                  <p className="text-center text-[#75777e] text-[11px] leading-relaxed">
+                    Cada empleado escanea este QR con su teléfono.
+                    El sistema lo identificará automáticamente.
+                  </p>
+                </div>
+              </div>
+
+              {/* Acciones */}
+              <div className="flex gap-2.5">
+                <button
+                  onClick={handleDownload}
+                  className="flex-1 h-[44px] bg-[#041632] hover:bg-[#1b2b48] text-white text-[13px] font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <span className="material-symbols-outlined text-[16px]">download</span>
+                  Descargar
+                </button>
+                <button
+                  onClick={handleCopyUrl}
+                  className={`flex-1 h-[44px] border text-[13px] font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer
+                    ${copied
+                      ? 'bg-[#dcfce7] border-[#bbf7d0] text-[#15803d]'
+                      : 'bg-white border-[#c5c6ce] hover:bg-[#f2f4f6] text-[#041632]'}`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    {copied ? 'check' : 'content_copy'}
+                  </span>
+                  {copied ? 'Copiado' : 'Copiar URL'}
+                </button>
+              </div>
+
+              {/* Lista de empleados autorizados */}
+              <div className="bg-white border border-[#e0e3e5] rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-[#e0e3e5] bg-[#f7f9fb]">
+                  <p className="text-[11px] font-semibold text-[#75777e] uppercase tracking-wide">
+                    Empleados autorizados en este QR
+                  </p>
+                </div>
+                <div className="overflow-y-auto" style={{ maxHeight: '200px' }}>
+                  {ALL_EMPLOYEES.filter(e => session.employeeIds.includes(e.id)).map(emp => (
+                    <div key={emp.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-[#f2f4f6]">
+                      <div className="w-7 h-7 rounded-full bg-[#041632] text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                        {emp.name.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-bold text-[#041632] truncate">{emp.name}</p>
+                        <p className="text-[10px] text-[#75777e] truncate">{emp.role}</p>
+                      </div>
+                      <span className="text-[10px] font-mono text-[#adb0b7]">{emp.id}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
