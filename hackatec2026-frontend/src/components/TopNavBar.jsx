@@ -22,7 +22,7 @@ export default function TopNavBar() {
         <button className="text-on-surface-variant hover:text-secondary-container transition-colors p-xs rounded-full hover:bg-surface-container-high">
           <span className="material-symbols-outlined">help_outline</span>
         </button>
-        <button className="border border-primary text-primary font-label-md text-label-md py-xs px-md rounded hover:bg-surface-container transition-colors ml-sm">
+        <button className="border border-primary text-primary font-label-md text-label-md py-xs px-md rounded-lg hover:bg-surface-container transition-colors ml-sm">
           Search Records
         </button>
         <div className="h-8 w-px bg-outline-variant mx-sm"></div>

@@ -4,7 +4,6 @@ import { getAllLocations, PLANT_CENTER } from '../services/locationService'
 
 const REFRESH_MS = 3 * 60 * 1000  // 3 minutos
 
-// Colores por rol
 const roleColor = (role = '') => {
   if (role.includes('Supervisor') || role.includes('Seguridad')) return '#041632'
   return '#fc820c'
@@ -54,7 +53,6 @@ export default function MapModule() {
   const [total,     setTotal]       = useState(0)
   const [staleCount,setStaleCount]  = useState(0)
 
-  // ── Cargar / refrescar ubicaciones ────────────────────────────────────────
   const refresh = useCallback(() => {
     const locs = getAllLocations()
     setLocations(locs)
@@ -63,7 +61,6 @@ export default function MapModule() {
     setStaleCount(Object.values(locs).filter(l => Date.now() - l.updatedAt > 10 * 60 * 1000).length)
   }, [])
 
-  // ── Inicializar mapa Leaflet ───────────────────────────────────────────────
   useEffect(() => {
     if (mapRef.current || !mapDivRef.current) return
 
@@ -79,7 +76,6 @@ export default function MapModule() {
       maxZoom: 19,
     }).addTo(map)
 
-    // Marcador de la planta (centro)
     L.marker([PLANT_CENTER.lat, PLANT_CENTER.lng], {
       icon: L.divIcon({
         className: '',
@@ -102,18 +98,15 @@ export default function MapModule() {
     }
   }, []) // eslint-disable-line
 
-  // ── Auto-refresh cada 3 minutos ───────────────────────────────────────────
   useEffect(() => {
     const id = setInterval(refresh, REFRESH_MS)
     return () => clearInterval(id)
   }, [refresh])
 
-  // ── Actualizar marcadores cuando cambian las ubicaciones ──────────────────
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
-    // Eliminar marcadores viejos
     Object.values(markersRef.current).forEach((m) => m.remove())
     markersRef.current = {}
 
@@ -146,9 +139,8 @@ export default function MapModule() {
   const syncTime = lastSync.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
 
   return (
-    <div className="col-span-12 md:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-sm flex flex-col h-[500px]">
+    <div className="col-span-12 md:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm flex flex-col h-[500px]">
 
-      {/* Header */}
       <div className="px-md py-sm border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
         <div className="flex items-center gap-sm">
           <h3 className="font-headline-sm text-headline-sm text-primary">Live Asset Tracking</h3>
@@ -160,7 +152,7 @@ export default function MapModule() {
         <div className="flex gap-sm">
           <button
             onClick={refresh}
-            className="text-label-md font-label-md px-sm py-xs bg-white border border-outline-variant rounded text-on-surface hover:bg-surface-variant transition-colors flex items-center gap-xs"
+            className="text-label-md font-label-md px-md py-xs bg-surface-container-lowest border border-outline-variant rounded-full text-on-surface hover:bg-surface-container-low transition-colors flex items-center gap-xs shadow-sm"
           >
             <span className="material-symbols-outlined text-[14px]">refresh</span>
             Refresh
@@ -168,12 +160,10 @@ export default function MapModule() {
         </div>
       </div>
 
-      {/* Mapa Leaflet */}
-      <div className="flex-1 relative overflow-hidden rounded-b-lg">
+      <div className="flex-1 relative overflow-hidden rounded-b-xl">
         <div ref={mapDivRef} style={{ width: '100%', height: '100%' }} />
 
-        {/* Leyenda */}
-        <div className="absolute top-md left-md bg-white/95 backdrop-blur-sm border border-outline-variant p-sm rounded shadow-sm z-[1000]">
+        <div className="absolute top-md left-md bg-white/95 backdrop-blur-sm border border-outline-variant p-sm rounded-lg shadow-sm z-[1000]">
           <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-xs">
             Empleados en planta
           </p>
@@ -191,14 +181,12 @@ export default function MapModule() {
           </div>
         </div>
 
-        {/* Nota de actualización */}
-        <div className="absolute bottom-sm right-sm bg-white/90 border border-outline-variant px-sm py-xs rounded text-label-md text-on-surface-variant z-[1000] flex items-center gap-xs">
+        <div className="absolute bottom-sm right-sm bg-white/90 border border-outline-variant px-sm py-xs rounded-full text-label-md text-on-surface-variant z-[1000] flex items-center gap-xs">
           <span className="material-symbols-outlined text-[12px]">schedule</span>
           Actualiza cada 3 min · {total} empleados
         </div>
       </div>
 
-      {/* Animación pulse para el CSS de los marcadores */}
       <style>{`
         @keyframes ping {
           75%, 100% { transform: scale(2); opacity: 0; }

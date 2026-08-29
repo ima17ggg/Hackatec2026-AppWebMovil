@@ -38,18 +38,18 @@ function CheckInItem({ item }) {
 
   return (
     <div
-      className={`flex gap-md p-sm hover:bg-surface-container-low rounded transition-colors cursor-default border border-transparent hover:border-outline-variant ${
+      className={`flex gap-md p-sm hover:bg-surface-container-low rounded-lg transition-colors cursor-default border border-transparent hover:border-outline-variant ${
         isUnknown ? 'bg-surface-variant/30' : ''
       }`}
     >
       {item.photo ? (
         <img
           alt="Verification Photo"
-          className="w-12 h-12 rounded object-cover border border-outline-variant bg-surface-dim"
+          className="w-12 h-12 rounded-lg object-cover border border-outline-variant bg-surface-dim"
           src={item.photo}
         />
       ) : (
-        <div className="w-12 h-12 rounded border border-outline-variant bg-surface-dim flex items-center justify-center text-outline">
+        <div className="w-12 h-12 rounded-lg border border-outline-variant bg-surface-dim flex items-center justify-center text-outline">
           <span className="material-symbols-outlined">person_off</span>
         </div>
       )}
@@ -60,13 +60,13 @@ function CheckInItem({ item }) {
         </div>
         <p className="font-body-md text-body-md text-on-surface-variant">{item.location}</p>
         {isUnknown ? (
-          <div className="flex items-center gap-xs mt-xs text-label-md font-label-md text-secondary-container">
+          <span className="inline-flex items-center gap-xs mt-xs text-label-md font-label-md text-secondary-container bg-secondary-container/10 rounded-full px-sm py-[2px]">
             <span className="material-symbols-outlined text-[14px]">warning</span> Manual Review Required
-          </div>
+          </span>
         ) : (
-          <div className="flex items-center gap-xs mt-xs text-label-md font-label-md text-[#15803d]">
+          <span className="inline-flex items-center gap-xs mt-xs text-label-md font-label-md text-[#15803d] bg-[#dcfce7] rounded-full px-sm py-[2px]">
             <span className="material-symbols-outlined text-[14px]">verified</span> Verified Match
-          </div>
+          </span>
         )}
       </div>
     </div>
@@ -75,7 +75,7 @@ function CheckInItem({ item }) {
 
 export default function ActivityFeed() {
   return (
-    <div className="col-span-12 md:col-span-4 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-sm flex flex-col h-[500px]">
+    <div className="col-span-12 md:col-span-4 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm flex flex-col h-[500px]">
       <div className="px-md py-sm border-b border-outline-variant bg-surface-container-low flex justify-between items-center">
         <h3 className="font-headline-sm text-headline-sm text-primary">Recent Check-ins</h3>
         <span className="material-symbols-outlined text-outline text-[20px] cursor-pointer">more_vert</span>

@@ -53,26 +53,26 @@ export default function Dashboard() {
   return (
     <main className="flex-1 p-lg pt-lg grid grid-cols-12 gap-lg bg-background">
       {/* Section Header */}
-      <div className="col-span-12 flex justify-between items-end mb-sm">
+      <div className="col-span-12 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm p-xl flex flex-col md:flex-row md:justify-between md:items-center gap-md">
         <div>
-          <h2 className="font-headline-md text-headline-md font-bold text-on-background">
+          <div className="inline-flex items-center gap-xs bg-surface-container-low rounded-full px-sm py-xs mb-sm border border-outline-variant">
+            <span className="w-2 h-2 rounded-full bg-secondary-container animate-pulse"></span>
+            <span className="font-label-md text-label-md text-on-surface-variant">Live Sync Active</span>
+          </div>
+          <h2 className="font-headline-lg text-headline-lg font-bold text-on-background">
             Live Operations Overview
           </h2>
-          <p className="font-body-md text-body-md text-on-surface-variant mt-xs">
+          <p className="font-body-lg text-body-lg text-on-surface-variant mt-xs max-w-md">
             Real-time metrics for Plant Alpha-4 across all shifts.
           </p>
-        </div>
-        <div className="text-label-md font-label-md text-on-surface-variant flex items-center gap-xs">
-          <span className="w-2 h-2 rounded-full bg-secondary-container animate-pulse"></span>
-          Live Sync Active
         </div>
       </div>
 
       {/* QR Registration Banner */}
-      <div className="col-span-12 bg-surface-container-lowest border border-outline-variant rounded-lg p-lg shadow-sm flex flex-col md:flex-row justify-between items-center relative overflow-hidden">
-        <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-primary/10 to-transparent pointer-events-none"></div>
+      <div className="col-span-12 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-sm flex flex-col md:flex-row justify-between items-center gap-md relative overflow-hidden">
+        <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-primary/5 to-transparent pointer-events-none"></div>
         <div className="flex items-center gap-lg relative z-10">
-          <div className="p-md bg-secondary text-on-secondary rounded-lg shadow-sm">
+          <div className="p-md bg-secondary-container text-on-primary rounded-xl shadow-sm fill-icon">
             <span className="material-symbols-outlined text-[32px]">qr_code_scanner</span>
           </div>
           <div>
@@ -84,7 +84,7 @@ export default function Dashboard() {
         </div>
         <button
           onClick={() => navigate('/qr-generate')}
-          className="mt-md md:mt-0 bg-primary text-on-primary font-label-lg text-label-lg py-sm px-lg rounded flex items-center justify-center gap-sm hover:bg-primary-container transition-colors shadow-sm relative z-10 cursor-pointer"
+          className="mt-md md:mt-0 bg-primary text-on-primary font-label-lg text-label-lg py-sm px-lg rounded-full flex items-center justify-center gap-sm hover:bg-primary-container transition-colors shadow-sm relative z-10 cursor-pointer"
         >
           <span className="material-symbols-outlined text-[18px]">qr_code_2</span>
           Generate Pass

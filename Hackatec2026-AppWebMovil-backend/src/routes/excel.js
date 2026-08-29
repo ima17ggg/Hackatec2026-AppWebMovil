@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import xlsx from 'xlsx';
+import exceljs from 'exceljs';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateRequired, successResponse } from '../utils/validation.js';
 import { importEmployeesFromRows } from '../utils/excel-import.js';
@@ -32,10 +32,10 @@ router.post('/import', upload.single('file'), asyncHandler(async (req, res) => {
   const dryRun = req.query.dryRun === 'true';
 
   // Parse Excel
-  const libro = xlsx.read(req.file.buffer, { type: 'buffer' });
-  const nombreHoja = libro.SheetNames[0];
-  const hoja = libro.Sheets[nombreHoja];
-  const filas = xlsx.utils.sheet_to_json(hoja);
+  const workbook = new exceljs.Workbook();
+  await workbook.xlsx.load(req.file.buffer);
+  const worksheet = workbook.worksheets[0];
+  const filas = worksheet.getRows().map(row => row.values.slice(1)); // Remove the first element (row number)
 
   if (filas.length === 0) {
     return res.status(400).json({

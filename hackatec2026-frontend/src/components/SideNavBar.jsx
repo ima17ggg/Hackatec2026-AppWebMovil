@@ -16,7 +16,7 @@ export default function SideNavBar() {
         <div className="flex items-center gap-md mb-lg">
           <img
             alt="Organization Logo"
-            className="w-10 h-10 rounded bg-white"
+            className="w-10 h-10 rounded-lg bg-white"
             src="https://lh3.googleusercontent.com/aida-public/AB6AXuCnVZR1wsVNuaz5wZsjuBXY0jC9Wwsm0PiZ__q2DGLPjIz6YXtIoJR8_9QwJFE4ed4tYkyVydnfpAR3zmplyZNAuI3QVoHhhb1UNUHwAcs_qUUgxAeSW4UgsSMS-tAw_1cOXhwiQ9rnRWwwpIP99u9O5COHDFOGoCW4teAkd9pK7ukLUJQGPuywS-Uo5vN3td-B70pyns9jiQBZ_q62wtUpjkKIZrjSbdhKtgInYjl63C6usavjXmgIoTgyJ72rfGj6XOwzViigDHw"
           />
           <div>
@@ -28,20 +28,20 @@ export default function SideNavBar() {
         </div>
         <button
           onClick={() => navigate('/qr-generate')}
-          className="w-full bg-secondary text-on-secondary font-label-lg text-label-lg py-sm px-md rounded flex items-center justify-center gap-sm hover:bg-secondary-container transition-colors shadow-sm cursor-pointer"
+          className="w-full bg-secondary-container text-on-secondary font-label-lg text-label-lg py-sm px-md rounded-full flex items-center justify-center gap-sm hover:opacity-90 transition-opacity shadow-sm cursor-pointer"
         >
           <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
           QR Registration
         </button>
       </div>
 
-      <ul className="flex-1 flex flex-col gap-sm px-sm">
+      <ul className="flex-1 flex flex-col gap-xs px-sm">
         {navItems.map((item) => (
           <li key={item.label}>
             {item.to === '#' ? (
               <a
                 href="#"
-                className="flex items-center gap-md py-sm rounded pl-4 transition-all duration-150 hover:bg-primary-fixed-variant text-tertiary-fixed-dim opacity-80 hover:opacity-100"
+                className="flex items-center gap-md py-sm px-md rounded-lg transition-all duration-150 hover:bg-primary-fixed-variant text-tertiary-fixed-dim opacity-80 hover:opacity-100"
               >
                 <span className="material-symbols-outlined">{item.icon}</span>
                 <span className="font-label-lg text-label-lg">{item.label}</span>
@@ -50,10 +50,10 @@ export default function SideNavBar() {
               <NavLink
                 to={item.to}
                 className={({ isActive }) =>
-                  `flex items-center gap-md py-sm rounded pl-4 transition-all duration-150 hover:bg-primary-fixed-variant ${
+                  `flex items-center gap-md py-sm px-md rounded-lg transition-all duration-150 ${
                     isActive
-                      ? 'text-secondary-fixed font-bold border-l-4 border-secondary-fixed opacity-90'
-                      : 'text-tertiary-fixed-dim opacity-80 hover:opacity-100'
+                      ? 'bg-secondary-container text-on-secondary font-bold shadow-sm'
+                      : 'text-tertiary-fixed-dim opacity-80 hover:opacity-100 hover:bg-primary-fixed-variant'
                   }`
                 }
               >
@@ -61,8 +61,7 @@ export default function SideNavBar() {
                 <span className="font-label-lg text-label-lg">{item.label}</span>
               </NavLink>
             )}
-            </li>
-          
+          </li>
         ))}
       </ul>
     </nav>
