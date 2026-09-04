@@ -53,13 +53,13 @@ export default function MapModule() {
   const [total,     setTotal]       = useState(0)
   const [staleCount,setStaleCount]  = useState(0)
 
-  const refresh = useCallback(() => {
-    const locs = getAllLocations()
-    setLocations(locs)
-    setLastSync(new Date())
-    setTotal(Object.keys(locs).length)
-    setStaleCount(Object.values(locs).filter(l => Date.now() - l.updatedAt > 10 * 60 * 1000).length)
-  }, [])
+const refresh = useCallback(async () => {
+  const locs = await getAllLocations()
+  setLocations(locs)
+  setLastSync(new Date())
+  setTotal(Object.keys(locs).length)
+  setStaleCount(Object.values(locs).filter(l => Date.now() - l.updatedAt > 10 * 60 * 1000).length)
+}, [])
 
   useEffect(() => {
     if (mapRef.current || !mapDivRef.current) return

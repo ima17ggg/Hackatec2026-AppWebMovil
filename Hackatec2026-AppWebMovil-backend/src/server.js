@@ -20,6 +20,7 @@ import qrRouter from './routes/qr.js';
 import gpsRouter from './routes/gps.js';
 import excelRouter from './routes/excel.js';
 import dashboardRouter from './routes/dashboard.js';
+import rolesRouter from './routes/roles.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,6 +50,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/usuarios', authenticateJWT, usuariosRouter);
 app.use('/api/empleados', authenticateJWT, empleadosRouter);
 app.use('/api/asignaciones', authenticateJWT, asignacionesRouter);
+app.use('/api/roles', authenticateJWT, rolesRouter);
 app.use('/api/plantas', authenticateJWT, plantasRouter);
 app.use('/api/asistencias', authenticateJWT, asistenciasRouter);
 app.use('/api/actividades', authenticateJWT, actividadesRouter);

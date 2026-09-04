@@ -1,7 +1,54 @@
 import { v4 as uuidv4 } from 'uuid';
+import ExcelJS from 'exceljs';
 import { supabase } from './supabase.js';
 
 const ID_ROL_DEFAULT = 1;
+
+// Convierte el buffer de un .xlsx/.xls en un arreglo de objetos usando la
+// primera fila como encabezados (correo, nombre, apellido_paterno, rfc,
+// codigo_empleado, etc.). Los encabezados se normalizan a minúsculas y sin
+// espacios extra para que no importe cómo los capturaron en el Excel.
+export async function parseExcelBuffer(buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const worksheet = workbook.worksheets[0];
+
+  if (!worksheet) return [];
+
+  const headers = [];
+  worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, colNumber) => {
+    headers[colNumber] = String(cell.value ?? '').trim().toLowerCase();
+  });
+
+  const rows = [];
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // encabezado
+
+    const rowData = {};
+    let hasValue = false;
+
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const key = headers[colNumber];
+      if (!key) return;
+
+      let value = cell.value;
+
+      // exceljs puede regresar objetos para rich text o hipervínculos
+      if (value && typeof value === 'object') {
+        value = value.text ?? value.result ?? '';
+      }
+
+      if (value !== null && value !== undefined && value !== '') hasValue = true;
+
+      rowData[key] = typeof value === 'string' ? value.trim() : value;
+    });
+
+    if (hasValue) rows.push(rowData);
+  });
+
+  return rows;
+}
 
 export async function importEmployeesFromRows(rows, dryRun = false) {
   const results = {

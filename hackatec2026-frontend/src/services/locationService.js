@@ -1,112 +1,92 @@
-/**
- * locationService.js
- *
- * DEMO: usa localStorage como backend.
- * Para producción, reemplaza cada función con su fetch() correspondiente.
- *
- * Endpoints esperados en el backend:
- *   POST   /api/location          { employeeId, name, role, lat, lng }
- *   DELETE /api/location/:id
- *   GET    /api/locations          → { [id]: { name, role, lat, lng, updatedAt } }
- */
-
+// services/locationService.js
+const API_BASE = '/api'
 const LOCATIONS_KEY = 'gps_locations:v1'
-const LOCATIONS_KEY_LEGACY = 'gps_locations'
-const SESSION_KEY   = 'gps_session:v1'
-const SESSION_KEY_LEGACY = 'gps_session'
+const SESSION_KEY = 'gps_session:v1'
 
-// ── Coordenadas del centro de la planta ─────────────────────────────────────
-// Cambia estos valores a las coordenadas reales de tu planta.
-// Cómo obtenerlas: Google Maps → click derecho sobre la ubicación → copiar lat,lng
-export const PLANT_CENTER = { lat: 19.4326, lng: -99.1332 }
+// Ajusta a las coordenadas reales si tu versión actual ya las tiene distintas
+export const PLANT_CENTER = { lat: 25.5428, lng: -103.4068 }
 
-// ── Empleados mock para demo (aparecen en el mapa si no hay GPS real) ────────
-const MOCK_LOCATIONS = {
-  'OP-4921': { name: 'Marcus Johnson',  role: 'Operador',    lat: 19.43350, lng: -99.13200, updatedAt: Date.now() },
-  'SV-1104': { name: 'Sarah Chen',      role: 'Supervisor',  lat: 19.43180, lng: -99.13450, updatedAt: Date.now() - 120000 },
-  'TC-8832': { name: 'David Miller',    role: 'Técnico',     lat: 19.43420, lng: -99.13100, updatedAt: Date.now() - 60000 },
-  'SF-2290': { name: 'Elena Rodríguez', role: 'Seguridad',   lat: 19.43260, lng: -99.13550, updatedAt: Date.now() - 180000 },
-}
-
-// ── Enviar ubicación (empleado → servidor) ───────────────────────────────────
+/**
+ * Guarda la última posición mientras la aplicación está en modo local.
+ * El backend actual no expone un endpoint para recibir posiciones, por lo que
+ * conservarla en el navegador evita perder el rastreo y permite mostrarla
+ * como respaldo si la API no está disponible.
+ */
 export function sendLocation(employeeId, name, role, lat, lng) {
-  // ── PRODUCCIÓN: reemplazar con ──────────────────────────────────────────────
-  // return fetch('/api/location', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-  //   body: JSON.stringify({ employeeId, name, role, lat, lng }),
-  // })
-  // ──────────────────────────────────────────────────────────────────────────
-  const all = readLocations()
-  all[employeeId] = { name, role, lat, lng, updatedAt: Date.now() }
-  localStorage.setItem(LOCATIONS_KEY, JSON.stringify(all))
-  console.info(`[GPS] ${name} → ${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+  if (!employeeId || !Number.isFinite(lat) || !Number.isFinite(lng)) return
+
+  const locations = readStoredLocations()
+  locations[employeeId] = { name, role, lat, lng, updatedAt: Date.now() }
+  localStorage.setItem(LOCATIONS_KEY, JSON.stringify(locations))
 }
 
-// ── Eliminar ubicación al hacer checkout ─────────────────────────────────────
-export function removeLocation(employeeId) {
-  // ── PRODUCCIÓN: reemplazar con ──────────────────────────────────────────────
-  // return fetch(`/api/location/${employeeId}`, { method: 'DELETE', ... })
-  // ──────────────────────────────────────────────────────────────────────────
-  const all = readLocations()
-  delete all[employeeId]
-  localStorage.setItem(LOCATIONS_KEY, JSON.stringify(all))
-}
-
-// ── Obtener todas las ubicaciones (dashboard) ────────────────────────────────
-export function getAllLocations() {
-  // ── PRODUCCIÓN: reemplazar con ──────────────────────────────────────────────
-  // const res = await fetch('/api/locations', { headers: { Authorization: `Bearer ${token}` } })
-  // return res.json()
-  // ──────────────────────────────────────────────────────────────────────────
-  const stored = readLocations()
-  // Si no hay datos reales, usar mock para demo
-  return Object.keys(stored).length > 0 ? stored : MOCK_LOCATIONS
-}
-
-// ── Sesión de tracking (persiste entre navegaciones) ────────────────────────
 export function startTrackingSession(employee) {
+  if (!employee?.id) return
   localStorage.setItem(SESSION_KEY, JSON.stringify({ ...employee, active: true }))
 }
 
 export function stopTrackingSession() {
   const session = getTrackingSession()
-  if (session) {
-    removeLocation(session.id)
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, active: false }))
-  }
+  if (!session) return
+
+  const locations = readStoredLocations()
+  delete locations[session.id]
+  localStorage.setItem(LOCATIONS_KEY, JSON.stringify(locations))
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, active: false }))
 }
 
 export function getTrackingSession() {
   try {
-    const current = localStorage.getItem(SESSION_KEY)
-    if (current) return JSON.parse(current)
-
-    const legacy = localStorage.getItem(SESSION_KEY_LEGACY)
-    if (!legacy) return null
-
-    const parsed = JSON.parse(legacy)
-    localStorage.setItem(SESSION_KEY, JSON.stringify(parsed))
-    localStorage.removeItem(SESSION_KEY_LEGACY)
-    return parsed
+    const raw = localStorage.getItem(SESSION_KEY)
+    return raw ? JSON.parse(raw) : null
   } catch {
     return null
   }
 }
 
-// ── Helpers internos ─────────────────────────────────────────────────────────
-function readLocations() {
+// Como todos los empleados de una planta comparten el mismo lat/lng exacto,
+// esto separa un poco los pines para que no se encimen (offset ~15-30m)
+function jitter(id) {
+  const seed = Number(id) || 0
+  const angle = ((seed * 137.5) % 360) * (Math.PI / 180)
+  const radius = 0.00015 + (seed % 5) * 0.00003
+  return { dLat: Math.cos(angle) * radius, dLng: Math.sin(angle) * radius }
+}
+
+export async function getAllLocations() {
+  let json
   try {
-    const current = localStorage.getItem(LOCATIONS_KEY)
-    if (current) return JSON.parse(current)
+    const res = await fetch(`${API_BASE}/empleados`, { credentials: 'include' })
+    if (!res.ok) return readStoredLocations()
+    json = await res.json()
+  } catch {
+    return readStoredLocations()
+  }
 
-    const legacy = localStorage.getItem(LOCATIONS_KEY_LEGACY)
-    if (!legacy) return {}
+  if (!json?.success || !Array.isArray(json.data)) return readStoredLocations()
 
-    const parsed = JSON.parse(legacy)
-    localStorage.setItem(LOCATIONS_KEY, JSON.stringify(parsed))
-    localStorage.removeItem(LOCATIONS_KEY_LEGACY)
-    return parsed
+  const locations = {}
+  for (const emp of json.data) {
+    if (!emp.on_site || !emp.location) continue
+    const { dLat, dLng } = jitter(emp.id_empleado)
+
+    locations[emp.id_empleado] = {
+      lat: emp.location.lat + dLat,
+      lng: emp.location.lng + dLng,
+      name: emp.name,
+      role: emp.role,
+      plant: emp.location.plant_name,
+      updatedAt: emp.checkInRaw ? new Date(emp.checkInRaw).getTime() : Date.now(),
+    }
+  }
+  return locations
+}
+
+function readStoredLocations() {
+  try {
+    const raw = localStorage.getItem(LOCATIONS_KEY)
+    const locations = raw ? JSON.parse(raw) : {}
+    return locations && typeof locations === 'object' ? locations : {}
   } catch {
     return {}
   }

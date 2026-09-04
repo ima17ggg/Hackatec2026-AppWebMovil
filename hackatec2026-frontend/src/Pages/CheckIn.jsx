@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { startTrackingSession } from '../services/locationService'
+import { recordCheckIn } from '../services/checkInActivityService'
 import {
   getQRSession,
   getSessionEmployees,
@@ -154,6 +155,7 @@ export default function CheckIn() {
       stopCamera()
       // ── Activa rastreo GPS en background (persiste mientras use la app)
       startTrackingSession({ id: employee.id, name: employee.name, role: employee.role })
+      recordCheckIn(employee, photo)
       setStep('done')
       setIsRegistering(false)
     }, 1400)

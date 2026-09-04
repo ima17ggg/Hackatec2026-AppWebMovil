@@ -1,10 +1,18 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
-import { ALL_EMPLOYEES, createQRSession } from '../services/qrSessionService'
+import { createQRSession } from '../services/qrSessionService'
 import { sendQRGeneratedEmail, isEmailConfigured, getEmailConfig } from '../services/emailService'
 
-const DEPARTMENTS = ['Todos', 'Producción', 'Mantenimiento', 'Seguridad', 'Calidad', 'Supervisión']
+/** Trae el catálogo real de empleados (con su planta asignada) desde el backend. */
+async function fetchEmployees() {
+  const res = await fetch('/api/empleados', { credentials: 'include' })
+  const json = await res.json()
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || 'No se pudo cargar la lista de empleados')
+  }
+  return json.data
+}
 
 /** Calcula la diferencia entre dos strings HH:MM. Devuelve texto legible. */
 function calcDuration(start, end) {
@@ -28,7 +36,12 @@ export default function QRGenerate() {
   const [endTime,     setEndTime]     = useState('15:00')
   const [date,        setDate]        = useState(() => new Date().toISOString().slice(0, 10))
   const [search,      setSearch]      = useState('')
-  const [deptFilter,  setDeptFilter]  = useState('Todos')
+  const [plantFilter, setPlantFilter] = useState('Todas')
+
+  // ── Estado del catálogo de empleados (real, desde el backend) ───────────
+  const [employees,        setEmployees]        = useState([])
+  const [loadingEmployees, setLoadingEmployees]  = useState(true)
+  const [employeesError,   setEmployeesError]    = useState('')
 
   // ── Estado del QR generado ───────────────────────────────────────────────
   const [session,    setSession]   = useState(null)   // sesión creada
@@ -42,14 +55,41 @@ export default function QRGenerate() {
 
   const qrImgRef = useRef(null)
 
+  // ── Carga del catálogo real de empleados (reemplaza el mock) ────────────
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadEmployees() {
+      setLoadingEmployees(true)
+      setEmployeesError('')
+      try {
+        const data = await fetchEmployees()
+        if (isMounted) setEmployees(data)
+      } catch (err) {
+        if (isMounted) setEmployeesError(err.message)
+      } finally {
+        if (isMounted) setLoadingEmployees(false)
+      }
+    }
+
+    loadEmployees()
+    return () => { isMounted = false }
+  }, [])
+
+  // ── Plantas disponibles, derivadas de los empleados cargados ────────────
+  const PLANTS = useMemo(() => {
+    const unique = [...new Set(employees.map(e => e.plant).filter(Boolean))].sort()
+    return ['Todas', ...unique]
+  }, [employees])
+
   // ── Filtrado de empleados ────────────────────────────────────────────────
-  const filtered = ALL_EMPLOYEES.filter(e => {
-    const matchDept   = deptFilter === 'Todos' || e.department === deptFilter
+  const filtered = employees.filter(e => {
+    const matchPlant  = plantFilter === 'Todas' || e.plant === plantFilter
     const matchSearch = !search ||
       e.name.toLowerCase().includes(search.toLowerCase()) ||
       e.id.toLowerCase().includes(search.toLowerCase())   ||
       e.role.toLowerCase().includes(search.toLowerCase())
-    return matchDept && matchSearch
+    return matchPlant && matchSearch
   })
 
   const allFilteredSelected = filtered.length > 0 && filtered.every(e => selectedIds.includes(e.id))
@@ -101,8 +141,8 @@ export default function QRGenerate() {
         setEmailStatus('skip')
       } else {
         setEmailStatus('sending')
-        const employees = ALL_EMPLOYEES.filter(e => selectedIds.includes(e.id))
-        sendQRGeneratedEmail({ session: fullSession, employees, qrDataUrl: dataUrl })
+        const selectedEmployees = employees.filter(e => selectedIds.includes(e.id))
+        sendQRGeneratedEmail({ session: fullSession, employees: selectedEmployees, qrDataUrl: dataUrl })
           .then(() => { setEmailStatus('sent'); setTimeout(() => setEmailStatus(''), 6000) })
           .catch(err => {
             setEmailStatus('error')
@@ -213,13 +253,14 @@ export default function QRGenerate() {
                 className="w-full h-9 bg-white border border-[#c5c6ce] rounded-lg pl-8 pr-3 text-[13px] text-[#041632] placeholder-[#adb0b7] focus:outline-none focus:border-[#041632] transition-colors"
               />
             </div>
-            {/* Departamento */}
+            {/* Planta asignada */}
             <select
-              value={deptFilter}
-              onChange={e => setDeptFilter(e.target.value)}
-              className="h-9 bg-white border border-[#c5c6ce] rounded-lg px-3 text-[13px] text-[#041632] focus:outline-none focus:border-[#041632] cursor-pointer"
+              value={plantFilter}
+              onChange={e => setPlantFilter(e.target.value)}
+              disabled={loadingEmployees || !!employeesError}
+              className="h-9 bg-white border border-[#c5c6ce] rounded-lg px-3 text-[13px] text-[#041632] focus:outline-none focus:border-[#041632] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+              {PLANTS.map(p => <option key={p}>{p}</option>)}
             </select>
           </div>
 
@@ -232,17 +273,44 @@ export default function QRGenerate() {
                 type="checkbox"
                 checked={allFilteredSelected}
                 onChange={toggleAll}
-                className="w-4 h-4 rounded border-[#c5c6ce] accent-[#041632] cursor-pointer"
+                disabled={loadingEmployees || !!employeesError || filtered.length === 0}
+                className="w-4 h-4 rounded border-[#c5c6ce] accent-[#041632] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <span className="text-[11px] text-[#75777e] font-semibold uppercase tracking-wide flex-1">
                 {allFilteredSelected ? 'Deseleccionar todos' : 'Seleccionar todos'}
-                {search || deptFilter !== 'Todos' ? ` (${filtered.length} filtrado${filtered.length !== 1 ? 's' : ''})` : ` (${ALL_EMPLOYEES.length})`}
+                {search || plantFilter !== 'Todas' ? ` (${filtered.length} filtrado${filtered.length !== 1 ? 's' : ''})` : ` (${employees.length})`}
               </span>
             </div>
 
             {/* Filas de empleados */}
             <div className="overflow-y-auto" style={{ maxHeight: '420px' }}>
-              {filtered.length === 0 ? (
+              {loadingEmployees ? (
+                <div className="py-10 text-center text-[#75777e] text-[13px] flex flex-col items-center gap-2">
+                  <svg className="animate-spin w-5 h-5 text-[#041632]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  Cargando empleados...
+                </div>
+              ) : employeesError ? (
+                <div className="py-10 text-center text-[#dc2626] text-[13px] flex flex-col items-center gap-2 px-4">
+                  <span className="material-symbols-outlined text-[32px]">error</span>
+                  <p>{employeesError}</p>
+                  <button
+                    onClick={() => {
+                      setLoadingEmployees(true)
+                      setEmployeesError('')
+                      fetchEmployees()
+                        .then(setEmployees)
+                        .catch(err => setEmployeesError(err.message))
+                        .finally(() => setLoadingEmployees(false))
+                    }}
+                    className="text-[12px] font-semibold underline cursor-pointer"
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              ) : filtered.length === 0 ? (
                 <div className="py-10 text-center text-[#75777e] text-[13px]">
                   <span className="material-symbols-outlined text-[32px] block mb-2">search_off</span>
                   Sin resultados para "{search}"
@@ -271,7 +339,7 @@ export default function QRGenerate() {
                         <p className={`text-[13px] font-bold truncate ${selected ? 'text-[#041632]' : 'text-[#1c1f22]'}`}>
                           {emp.name}
                         </p>
-                        <p className="text-[11px] text-[#75777e] truncate">{emp.role} · {emp.department}</p>
+                        <p className="text-[11px] text-[#75777e] truncate">{emp.role} · {emp.plant}</p>
                       </div>
                       <span className="text-[11px] font-mono text-[#adb0b7] shrink-0">{emp.id}</span>
                     </label>
@@ -553,7 +621,7 @@ export default function QRGenerate() {
                   </p>
                 </div>
                 <div className="overflow-y-auto" style={{ maxHeight: '200px' }}>
-                  {ALL_EMPLOYEES.filter(e => session.employeeIds.includes(e.id)).map(emp => (
+                  {employees.filter(e => session.employeeIds.includes(e.id)).map(emp => (
                     <div key={emp.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-[#f2f4f6]">
                       <div className="w-7 h-7 rounded-full bg-[#041632] text-white flex items-center justify-center text-[10px] font-bold shrink-0">
                         {emp.name.split(' ').map(n => n[0]).slice(0, 2).join('')}
